@@ -5,6 +5,16 @@
 
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue } catch { }
+
+# zip extraction without Expand-Archive: works even when the Archive module
+# cannot load (sandbox / Restricted policy machines)
+function Expand-Zip([string]$zip, [string]$dest) {
+    if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dest)
+}
 
 $GitHubRepo   = 'dmitryrublev04-cpu/openglm'
 $ReleaseTag   = 'v1.1.0'
@@ -28,7 +38,7 @@ if (-not $modSrc -or -not (Test-Path $modSrc)) {
     $tmpZip  = Join-Path $env:TEMP 'openglm-repo.zip'
     $tmpDir  = Join-Path $env:TEMP ('openglm-' + [guid]::NewGuid().ToString('N').Substring(0,8))
     Invoke-WebRequest "https://github.com/$GitHubRepo/archive/refs/heads/main.zip" -OutFile $tmpZip -UseBasicParsing
-    Expand-Archive -Force -Path $tmpZip -DestinationPath $tmpDir
+    Expand-Zip $tmpZip $tmpDir
     $ModRoot = Join-Path $tmpDir 'openglm-main'
     $modSrc  = Join-Path $ModRoot 'opencode\themes\openglm.json'
     if (-not (Test-Path $modSrc)) { throw 'mod files missing even after download - check $GitHubRepo in install.ps1' }
@@ -54,7 +64,7 @@ if ($haveCli -or (Test-Path $OcExe)) {
     $zip = Join-Path $env:TEMP 'opencode-engine.zip'
     Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
     New-Item -ItemType Directory -Force -Path (Split-Path $OcExe) | Out-Null
-    Expand-Archive -Force -Path $zip -DestinationPath (Join-Path $env:TEMP 'opencode-engine')
+    Expand-Zip $zip (Join-Path $env:TEMP 'opencode-engine')
     Get-ChildItem (Join-Path $env:TEMP 'opencode-engine') -Recurse -Filter 'opencode.exe' |
         Select-Object -First 1 |
         ForEach-Object { Copy-Item $_.FullName $OcExe -Force }
@@ -86,7 +96,7 @@ if (Test-Path $plugSrc) {
         Write-Host '[i] downloading brand plugin dependencies (one time)...' -ForegroundColor Cyan
         $depsZip = Join-Path $env:TEMP 'openglm-brand-deps.zip'
         Invoke-WebRequest "https://github.com/$GitHubRepo/releases/download/$ReleaseTag/openglm-brand-deps.zip" -OutFile $depsZip -UseBasicParsing
-        Expand-Archive -Force -Path $depsZip -DestinationPath $plugDst
+        Expand-Zip $depsZip $plugDst
         Remove-Item $depsZip -Force -ErrorAction SilentlyContinue
         if (-not (Test-Path $nmDir)) { throw 'plugin dependencies download failed' }
     }

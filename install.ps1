@@ -20,8 +20,10 @@ Write-Host ''
 Write-Host '== openglm installer ==' -ForegroundColor Green
 
 # --- 1. locate mod files: next to script, or download from GitHub ------------
-$modSrc = Join-Path $ModRoot 'opencode\themes\openglm.json'
-if (-not (Test-Path $modSrc)) {
+# NOTE: when piped through "irm | iex", $PSScriptRoot is empty - handle it.
+$modSrc = $null
+if ($ModRoot) { $modSrc = Join-Path $ModRoot 'opencode\themes\openglm.json' }
+if (-not $modSrc -or -not (Test-Path $modSrc)) {
     Write-Host '[i] mod files not found locally, downloading from GitHub...' -ForegroundColor Cyan
     $tmpZip  = Join-Path $env:TEMP 'openglm-repo.zip'
     $tmpDir  = Join-Path $env:TEMP ('openglm-' + [guid]::NewGuid().ToString('N').Substring(0,8))

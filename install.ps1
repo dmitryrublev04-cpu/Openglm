@@ -19,8 +19,6 @@ function Expand-Zip([string]$zip, [string]$dest) {
 $GitHubRepo   = 'dmitryrublev04-cpu/openglm'
 $ReleaseTag   = 'v1.1.0'
 $TgUrl        = 'https://t.me/+oLvLfkydwG8xMWFi'
-$OcRepo       = 'anomalyco/opencode'
-$OcAsset      = 'opencode-windows-x64.zip'
 $Home_        = $env:USERPROFILE
 $Dest         = Join-Path $Home_ '.config\opencode'
 $OcExe        = Join-Path $Home_ '.opencode\bin\opencode.exe'
@@ -45,32 +43,46 @@ if (-not $modSrc -or -not (Test-Path $modSrc)) {
     Write-Host '[+] mod files downloaded' -ForegroundColor Green
 }
 
-# --- 2. ensure OpenCode engine (portable single exe, no app install) ---------
+# --- 2. ensure OpenCode V2 engine (npm tarball - the official V2 channel) -----
 $haveCli = Get-Command opencode -ErrorAction SilentlyContinue
 if ($haveCli -or (Test-Path $OcExe)) {
     Write-Host '[i] OpenCode engine already present' -ForegroundColor Cyan
 } else {
-    Write-Host '[i] downloading OpenCode engine (portable, one exe)...' -ForegroundColor Cyan
-    # pinned release first (supply-chain safety); falls back to latest
-    $rel = $null
+    Write-Host '[i] downloading OpenCode V2 engine (portable, one exe)...' -ForegroundColor Cyan
+    # pinned verified version first; falls back to the official latest channel
+    $versions = @('2.0.31')
     try {
-        $rel = Invoke-RestMethod "https://api.github.com/repos/$OcRepo/releases/tags/v2.0.31" -Headers @{ 'User-Agent' = 'openglm' }
+        $meta = Invoke-RestMethod 'https://opencode.ai/update/api/latest/cli/npm' -Headers @{ 'User-Agent' = 'openglm' }
+        if ($meta.version) { $versions = @($versions + $meta.version) | Select-Object -Unique }
     } catch {
-        Write-Host '[i] pinned version unavailable, falling back to latest' -ForegroundColor Yellow
-        $rel = Invoke-RestMethod "https://api.github.com/repos/$OcRepo/releases/latest" -Headers @{ 'User-Agent' = 'openglm' }
+        Write-Host '[i] official latest channel unreachable, using pinned version' -ForegroundColor Yellow
     }
-    $asset  = $rel.assets | Where-Object { $_.name -eq $OcAsset } | Select-Object -First 1
-    if (-not $asset) { throw 'could not find engine release asset' }
-    $zip = Join-Path $env:TEMP 'opencode-engine.zip'
-    Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
-    New-Item -ItemType Directory -Force -Path (Split-Path $OcExe) | Out-Null
-    Expand-Zip $zip (Join-Path $env:TEMP 'opencode-engine')
-    Get-ChildItem (Join-Path $env:TEMP 'opencode-engine') -Recurse -Filter 'opencode.exe' |
-        Select-Object -First 1 |
-        ForEach-Object { Copy-Item $_.FullName $OcExe -Force }
-    Remove-Item $zip -Force -ErrorAction SilentlyContinue
-    if (-not (Test-Path $OcExe)) { throw 'engine download failed' }
-    Write-Host '[+] OpenCode engine installed (portable)' -ForegroundColor Green
+    $scopes = @('@opencode', '@opencode-ai')
+    $tgz = Join-Path $env:TEMP 'opencode-engine.tgz'
+    $ext = Join-Path $env:TEMP 'opengine-ext'
+    $done = $false
+    foreach ($v in $versions) {
+        foreach ($s in $scopes) {
+            $url = "https://registry.npmjs.org/$s/cli-windows-x64/-/cli-windows-x64-$v.tgz"
+            try {
+                Invoke-WebRequest $url -OutFile $tgz -UseBasicParsing
+                if (Test-Path $ext) { Remove-Item $ext -Recurse -Force }
+                tar -xzf $tgz -C (New-Item -ItemType Directory -Force -Path $ext).FullName
+                $exe = Get-ChildItem $ext -Recurse -Filter 'opencode.exe' | Select-Object -First 1
+                if ($exe) {
+                    New-Item -ItemType Directory -Force -Path (Split-Path $OcExe) | Out-Null
+                    Copy-Item $exe.FullName $OcExe -Force
+                    $done = $true
+                    break
+                }
+            } catch { }
+        }
+        if ($done) { break }
+    }
+    Remove-Item $tgz -Force -ErrorAction SilentlyContinue
+    Remove-Item $ext -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not $done -or -not (Test-Path $OcExe)) { throw 'could not download the OpenCode V2 engine' }
+    Write-Host '[+] OpenCode V2 engine installed (portable)' -ForegroundColor Green
 }
 
 # --- 3. mod files into place --------------------------------------------------

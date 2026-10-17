@@ -85,7 +85,8 @@ Write-Host '[+] theme / agent / commands installed' -ForegroundColor Green
 # --- 3b. brand plugin (baked splash animation, /gif) --------------------------
 $plugSrc = Join-Path $ModRoot 'opencode\plugins\openglm-brand'
 $plugDst = Join-Path $Dest 'plugins\openglm-brand'
-if (Test-Path $plugSrc) {
+$brandOk = (Test-Path $plugSrc)
+if ($brandOk) {
     if ($plugSrc -ne $plugDst) {
         New-Item -ItemType Directory -Force -Path (Split-Path $plugDst) | Out-Null
         Copy-Item -Recurse -Force $plugSrc $plugDst
@@ -93,14 +94,24 @@ if (Test-Path $plugSrc) {
     # plugin needs its JS dependencies once; they ship as a release asset zip
     $nmDir = Join-Path $plugDst 'node_modules'
     if (-not (Test-Path $nmDir)) {
-        Write-Host '[i] downloading brand plugin dependencies (one time)...' -ForegroundColor Cyan
-        $depsZip = Join-Path $env:TEMP 'openglm-brand-deps.zip'
-        Invoke-WebRequest "https://github.com/$GitHubRepo/releases/download/$ReleaseTag/openglm-brand-deps.zip" -OutFile $depsZip -UseBasicParsing
-        Expand-Zip $depsZip $plugDst
-        Remove-Item $depsZip -Force -ErrorAction SilentlyContinue
-        if (-not (Test-Path $nmDir)) { throw 'plugin dependencies download failed' }
+        try {
+            Write-Host '[i] downloading brand plugin dependencies (one time)...' -ForegroundColor Cyan
+            $depsZip = Join-Path $env:TEMP 'openglm-brand-deps.zip'
+            Invoke-WebRequest "https://github.com/$GitHubRepo/releases/download/$ReleaseTag/openglm-brand-deps.zip" -OutFile $depsZip -UseBasicParsing
+            Expand-Zip $depsZip $plugDst
+            Remove-Item $depsZip -Force -ErrorAction SilentlyContinue
+        } catch { }
+        # degrade gracefully: without deps the plugin must not be registered
+        if (-not (Test-Path $nmDir)) {
+            Remove-Item $plugDst -Recurse -Force -ErrorAction SilentlyContinue
+            $brandOk = $false
+        }
     }
+}
+if ($brandOk) {
     Write-Host '[+] brand plugin (splash animation, /gif)' -ForegroundColor Green
+} else {
+    Write-Host '[!] brand plugin skipped: release asset missing - add Release v1.1.0 with openglm-brand-deps.zip to the repo' -ForegroundColor Yellow
 }
 
 # --- 4. cli.json: theme + comfort ---------------------------------------------
